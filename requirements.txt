@@ -1,0 +1,7 @@
+aiogram==3.28.2
+aiohttp==3.13.5
+aiosqlite==0.22.1
+fastapi==0.136.3
+uvicorn==0.48.0
+python-dotenv==1.2.2
+openpyxl==3.1.5
