@@ -5,3 +5,5 @@ fastapi==0.136.3
 uvicorn==0.48.0
 python-dotenv==1.2.2
 openpyxl==3.1.5
+python-multipart
+aiohttp
