@@ -1,5 +1,6 @@
 import os
 import asyncio
+import aiohttp
 from fastapi import FastAPI, Request
 from aiogram import Bot
 from dotenv import load_dotenv
@@ -9,7 +10,12 @@ load_dotenv()
 app = FastAPI()
 bot = Bot(token=os.getenv("BOT_TOKEN"))
 
-def extract_city_from_note(note: str) -> str:
+AMOCRM_SUBDOMAIN = os.getenv("AMOCRM_SUBDOMAIN")
+AMOCRM_LONG_TOKEN = os.getenv("AMOCRM_LONG_TOKEN")
+
+def extract_city_from_note(text: str) -> str:
+    if not text:
+        return None
     cities = [
         "Алматы", "Астана", "Шымкент", "Актобе", "Тараз",
         "Павлодар", "Усть-Каменогорск", "Семей", "Атырау",
@@ -17,19 +23,19 @@ def extract_city_from_note(note: str) -> str:
         "Актау", "Темиртау", "Туркестан", "Экибастуз"
     ]
     for city in cities:
-        if city.lower() in note.lower():
+        if city.lower() in text.lower():
             return city
     return None
 
-def extract_order_number(note: str) -> str:
-    import re
-    match = re.search(r'[#№]\s*(\d+)', note)
-    if match:
-        return match.group(1)
-    match = re.search(r'\b(\d{4,})\b', note)
-    if match:
-        return match.group(1)
-    return "Unknown"
+async def get_deal_info(deal_id: str) -> dict:
+    url = f"https://{AMOCRM_SUBDOMAIN}.amocrm.ru/api/v4/leads/{deal_id}"
+    headers = {
+        "Authorization": f"Bearer {AMOCRM_LONG_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as resp:
+            return await resp.json()
 
 @app.post("/webhook/amo")
 async def amo_webhook(request: Request):
@@ -42,42 +48,31 @@ async def amo_webhook(request: Request):
             print(f"{key}: {value}")
         print("===================")
 
-        # Получаем deal_id из данных AmoCRM
-        deal_id = None
-        for key, value in data_dict.items():
-            if "leads[status][0][id]" in key or "leads[add][0][id]" in key:
-                deal_id = value
-                break
+        deal_id = data_dict.get("leads[status][0][id]") or data_dict.get("leads[add][0][id]")
+
         if not deal_id:
             for key, value in data_dict.items():
-                if "[id]" in key and value.isdigit():
+                if "[id]" in key:
                     deal_id = value
                     break
 
-        # Получаем текст заказа
-        note = ""
-        for key, value in data_dict.items():
-            if "note" in key.lower() or "text" in key.lower():
-                note = value
-                break
+        if deal_id:
+            deal = await get_deal_info(deal_id)
+            deal_name = deal.get("name", "")
+            print(f"Deal name: {deal_name}")
 
-        # Если нет note — берём название сделки
-        if not note:
-            for key, value in data_dict.items():
-                if "name" in key.lower():
-                    note = value
-                    break
+            city = extract_city_from_note(deal_name)
+            note = deal_name
 
-        city = extract_city_from_note(note)
-        order_number = deal_id or extract_order_number(note)
+            print(f"deal_id: {deal_id}, city: {city}, note: {note}")
 
-        print(f"deal_id: {deal_id}, city: {city}, order: {order_number}, note: {note}")
+            if city:
+                await send_order_to_city(bot, city, note, deal_id, deal_id)
+                return {"status": "ok", "city": city, "deal_id": deal_id}
+            else:
+                return {"status": "no_city_found", "deal_name": deal_name}
 
-        if city:
-            await send_order_to_city(bot, city, note, order_number, deal_id)
-            return {"status": "ok", "city": city, "order": order_number, "deal_id": deal_id}
-        else:
-            return {"status": "no_city_found", "note": note, "data": data_dict}
+        return {"status": "no_deal_id"}
 
     except Exception as e:
         print(f"Webhook error: {e}")
