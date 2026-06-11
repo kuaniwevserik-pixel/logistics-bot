@@ -15,6 +15,7 @@ async def main():
     dp = Dispatcher(storage=storage)
     dp.include_router(router)
     print("Bot started!")
+    await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
 
 asyncio.run(main())
