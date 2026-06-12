@@ -26,6 +26,14 @@ async def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS order_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_number TEXT,
+                telegram_id INTEGER,
+                message_id INTEGER
+            )
+        """)
         await db.commit()
 
 async def add_courier(telegram_id, name, city, username):
@@ -69,3 +77,28 @@ async def get_all_orders():
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("SELECT * FROM orders") as cursor:
             return await cursor.fetchall()
+
+async def save_order_message(order_number, telegram_id, message_id):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            INSERT INTO order_messages (order_number, telegram_id, message_id)
+            VALUES (?, ?, ?)
+        """, (order_number, telegram_id, message_id))
+        await db.commit()
+
+async def get_order_messages(order_number):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT telegram_id, message_id FROM order_messages WHERE order_number = ?",
+            (order_number,)
+        ) as cursor:
+            return await cursor.fetchall()
+
+async def is_order_taken(order_number):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT courier_id FROM orders WHERE order_number = ? AND status = 'В пути' ORDER BY id DESC LIMIT 1",
+            (order_number,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else None
