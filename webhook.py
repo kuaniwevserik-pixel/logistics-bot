@@ -4,6 +4,7 @@ from aiogram import Bot
 from dotenv import load_dotenv
 from bot import send_order_to_city
 from amocrm import get_order_details
+from database import init_db, get_order_messages
 
 load_dotenv()
 app = FastAPI()
